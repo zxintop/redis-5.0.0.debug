@@ -44,6 +44,8 @@ typedef char *sds;
 
 /* Note: sdshdr5 is never used, we just access the flags byte directly.
  * However is here to document the layout of type 5 SDS strings. */
+
+// __attribute__ ((__packed__)) packed 修饰后，结构体按字节对齐
 struct __attribute__ ((__packed__)) sdshdr5 {
     unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
     char buf[];
@@ -73,6 +75,9 @@ struct __attribute__ ((__packed__)) sdshdr64 {
     char buf[];
 };
 
+
+// 宏定义，预处理阶段会进行替换
+// C语言编译阶段：预处理-编译-汇编-链接
 #define SDS_TYPE_5  0
 #define SDS_TYPE_8  1
 #define SDS_TYPE_16 2
@@ -84,6 +89,7 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
+// 内联函数，编译过程中，编译器会决定是否将其在调用处展开，减少方法调用对程序性能的影响
 static inline size_t sdslen(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -215,6 +221,7 @@ static inline void sdssetalloc(sds s, size_t newlen) {
     }
 }
 
+// 习惯在头文件中进行函数声明
 sds sdsnewlen(const void *init, size_t initlen);
 sds sdsnew(const char *init);
 sds sdsempty(void);

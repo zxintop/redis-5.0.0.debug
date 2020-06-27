@@ -81,10 +81,16 @@ zskiplist *zslCreate(void) {
     int j;
     zskiplist *zsl;
 
+    // sizeof 计算结构体的大小-字节个数
+    // zmalloc 为 zskiplist 动态分配内存空间
     zsl = zmalloc(sizeof(*zsl));
+    // 初始化结构体中的字段值
     zsl->level = 1;
     zsl->length = 0;
+
+    // 创建头节点
     zsl->header = zslCreateNode(ZSKIPLIST_MAXLEVEL,0,NULL);
+    // 设置头节点level数组字段的默认值
     for (j = 0; j < ZSKIPLIST_MAXLEVEL; j++) {
         zsl->header->level[j].forward = NULL;
         zsl->header->level[j].span = 0;
@@ -130,40 +136,63 @@ int zslRandomLevel(void) {
  * exist (up to the caller to enforce that). The skiplist takes ownership
  * of the passed SDS string 'ele'. */
 zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
+    // 存储需要更新的node指针
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
+    // 存储头节点到待更新节点之间的跨度
     unsigned int rank[ZSKIPLIST_MAXLEVEL];
     int i, level;
 
+    // 断言score是否是数值
     serverAssert(!isnan(score));
+
+    // 获取跳跃表头节点
     x = zsl->header;
+
+    // 从最高层开始遍历
     for (i = zsl->level-1; i >= 0; i--) {
         /* store rank that is crossed to reach the insert position */
+        // 设置当前层的rank为上一层的rank
         rank[i] = i == (zsl->level-1) ? 0 : rank[i+1];
+
+        // 遍历当前层，如果满足条件，rank加上本层的span
+        // 满足条件往前走，不满足条件往下走
         while (x->level[i].forward &&
                 (x->level[i].forward->score < score ||
                     (x->level[i].forward->score == score &&
                     sdscmp(x->level[i].forward->ele,ele) < 0)))
         {
+            // 满足条件时，rank加上本层的span
             rank[i] += x->level[i].span;
+            // 迭代x，继续在本层向前查找
             x = x->level[i].forward;
         }
+
+        // 记录本层需要update的节点
         update[i] = x;
     }
     /* we assume the element is not already inside, since we allow duplicated
      * scores, reinserting the same element should never happen since the
      * caller of zslInsert() should test in the hash table if the element is
      * already inside or not. */
+    // 插入逻辑不检查 ele 元素是否已存在跳跃表中，调用该函数的函数中要提前检查 ele 是否已存在
+    // 当新插入一个节点时，要为这个节点随机生成一个 level 值，节点的level一旦确定便不再改变
+    // 产生 level n (1<=n<=64) 的概率：(1-p)*p^(n-1) p=0.25
     level = zslRandomLevel();
     if (level > zsl->level) {
+        // 如果生成的level比当前最高的level大
+        // 则需要更新头节点的 原始 zsl->level 到 level-1 层
         for (i = zsl->level; i < level; i++) {
             rank[i] = 0;
             update[i] = zsl->header;
             update[i]->level[i].span = zsl->length;
         }
+        // 更新跳跃表level
         zsl->level = level;
     }
+    // 创建待插入的节点
     x = zslCreateNode(level,score,ele);
     for (i = 0; i < level; i++) {
+        // 进行插入操作，更新节点的 forward 和 span
         x->level[i].forward = update[i]->level[i].forward;
         update[i]->level[i].forward = x;
 
@@ -173,15 +202,20 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
     }
 
     /* increment span for untouched levels */
+    // 当插入节点的level小于当前最高level时，对于未触及到的level，需要将其span加1
     for (i = level; i < zsl->level; i++) {
         update[i]->level[i].span++;
     }
 
+    // 更新backward
     x->backward = (update[0] == zsl->header) ? NULL : update[0];
+    // 如果x的forward不为NULL，则需要将x的forward的backward更新为x，否则说明x为最后一个节点，需要更新 zsl 的tail为x
     if (x->level[0].forward)
         x->level[0].forward->backward = x;
     else
         zsl->tail = x;
+
+    // 跳跃表长度加1
     zsl->length++;
     return x;
 }

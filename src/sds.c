@@ -30,6 +30,17 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * redis 的 SDS 源码学习：
+ * 注意1：暴露给上层的是指向柔性数组的buf的指针
+ * 注意2：读操作复杂度多为O(1)，写操作则可能导致扩容
+ *
+ * 总结：
+ * 1. SDS 是如何兼容C语言字符串的？如何保证二进制安全的？
+ * SDS对象中的buf是一个柔性数组，上层调用时，SDS直接返回了buf的地址，由于buf是直接指向内容的指针，故兼容C的函数。
+ * 而当真正读取内容时，SDS会通过len来限制读取长度，而非'\0'，故保证了二进制安全。
+ * */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -96,6 +107,7 @@ sds sdsnewlen(const void *init, size_t initlen) {
     int hdrlen = sdsHdrSize(type);
     unsigned char *fp; /* flags pointer. */
 
+    // +1 为了在字符串结尾添加 '\0' 字符
     sh = s_malloc(hdrlen+initlen+1);
     if (init==SDS_NOINIT)
         init = NULL;
@@ -164,6 +176,8 @@ sds sdsdup(const sds s) {
 /* Free an sds string. No operation is performed if 's' is NULL. */
 void sdsfree(sds s) {
     if (s == NULL) return;
+
+    // s[-1] 指针向前偏移一个字节，得到 flag 字段，sdsHdrSize 函数根据 flag 返回 sds header 的大小
     s_free((char*)s-sdsHdrSize(s[-1]));
 }
 
@@ -191,6 +205,9 @@ void sdsupdatelen(sds s) {
  * so that next append operations will not require allocations up to the
  * number of bytes previously available. */
 void sdsclear(sds s) {
+
+    // 字符串清理函数，为了减少内存分配的次数，清理字符串时，简单的将其len设置为0
+    // 没有真正的将buf数组回收，将其设置为'\0'，待下次需要申请大小相同的buf时，可以重复使用
     sdssetlen(s, 0);
     s[0] = '\0';
 }
@@ -219,6 +236,7 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
     else
         newlen += SDS_MAX_PREALLOC;
 
+    // 根据扩展后的长度，重新选取字符串的存储类型
     type = sdsReqType(newlen);
 
     /* Don't use type 5: the user is appending to the string and type 5 is
@@ -236,6 +254,7 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
          * and can't use realloc */
         newsh = s_malloc(hdrlen+newlen+1);
         if (newsh == NULL) return NULL;
+        // 将原字符串中的buf内容移动的新的位置，注意加1是原字符串的 nul term
         memcpy((char*)newsh+hdrlen, s, len+1);
         s_free(sh);
         s = (char*)newsh+hdrlen;
@@ -395,7 +414,9 @@ sds sdscatlen(sds s, const void *t, size_t len) {
 
     s = sdsMakeRoomFor(s,len);
     if (s == NULL) return NULL;
+    // 使用内存拷贝函数，保证二进制安全性
     memcpy(s+curlen, t, len);
+    // 设置字符串的新长度
     sdssetlen(s, curlen+len);
     s[curlen+len] = '\0';
     return s;
