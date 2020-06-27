@@ -1,3 +1,12 @@
+```
+1.下载源码 git clone https://github.com/zxintop/redis-5.0.0.debug.git
+2.导入 CLion
+3.执行src目录下的 mkrelease.sh
+4.点击CLion调试按钮,选择REDIS-SERVER | DEBUG,执行即可
+```
+
+
+
 This README is just a fast *quick start* document. You can find more detailed documentation at [redis.io](https://redis.io).
 
 What is Redis?
